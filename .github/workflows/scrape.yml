@@ -2,7 +2,7 @@ name: Scrape proxies
 
 on:
   schedule:
-    - cron: '0 */3 * * *'   # every 3 hours (UTC). GitHub cron is best-effort —
+    - cron: '0 */1 * * *'   # every 3 hours (UTC). GitHub cron is best-effort —
                               # can slip a few minutes under load, fine for this.
   workflow_dispatch: {}      # lets you also trigger it manually from the Actions tab
 
