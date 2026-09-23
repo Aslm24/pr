@@ -24,12 +24,16 @@ async def _get_country(session: aiohttp.ClientSession, ip: str) -> str:
     return "??"
 
 
-async def check_proxy(
-    proxy: str,
-    protocol: str,
-    semaphore: asyncio.Semaphore,
-    geo_session: aiohttp.ClientSession,
-) -> dict | None:
+async def check_proxy(proxy: str, protocol: str, semaphore: asyncio.Semaphore) -> dict | None:
+    """
+    Liveness check only — no geo lookup here. Releasing the semaphore slot
+    the moment this resolves (bounded by CHECK_TIMEOUT) is what lets a
+    large candidate pool actually benefit from MAX_CONCURRENT_CHECKS;
+    geo-IP lookup used to add up to 4 more seconds per SUCCESSFUL check
+    before the slot freed, and worse, ip-api.com's free tier caps at
+    ~45 requests/minute — a limit that no amount of internal concurrency
+    tuning can get around. See check_all() for where geo lookup now happens.
+    """
     async with semaphore:
         start = time.monotonic()
         try:
@@ -56,8 +60,7 @@ async def check_proxy(
                             return None
 
             latency_ms = round((time.monotonic() - start) * 1000)
-            country = await _get_country(geo_session, proxy.split(":")[0])
-            return {"proxy": proxy, "protocol": protocol, "latency": latency_ms, "country": country}
+            return {"proxy": proxy, "protocol": protocol, "latency": latency_ms, "country": "??"}
 
         except Exception:
             return None
@@ -65,24 +68,38 @@ async def check_proxy(
 
 async def check_all(proxies_by_protocol: dict[str, set[str]]) -> list[dict]:
     semaphore = asyncio.Semaphore(config.MAX_CONCURRENT_CHECKS)
+
+    tasks = [
+        check_proxy(proxy, protocol, semaphore)
+        for protocol, proxies in proxies_by_protocol.items()
+        for proxy in proxies
+    ]
+    total = len(tasks)
+
+    if total == 0:
+        return []
+
     working: list[dict] = []
-
-    async with aiohttp.ClientSession() as geo_session:
-        tasks = [
-            check_proxy(proxy, protocol, semaphore, geo_session)
-            for protocol, proxies in proxies_by_protocol.items()
-            for proxy in proxies
-        ]
-        total = len(tasks)
-
-        if total == 0:
-            return []
-
-        for coro in asyncio.as_completed(tasks):
-            result = await coro
-            if result:
-                working.append(result)
+    for coro in asyncio.as_completed(tasks):
+        result = await coro
+        if result:
+            working.append(result)
 
     working.sort(key=lambda x: x["latency"])
     logger.info(f"البروكسيات الشغالة: {len(working)} من أصل {total}")
+
+    # Geo lookup happens AFTER liveness checking, only on the (much
+    # smaller) working set, with its own concurrency cap kept under
+    # ip-api.com's free-tier ~45 req/min limit — so it can't bottleneck
+    # the expensive liveness-check phase anymore, and can't blow through
+    # the external service's own rate limit either.
+    geo_semaphore = asyncio.Semaphore(40)
+
+    async def _attach_country(entry: dict, geo_session: aiohttp.ClientSession) -> None:
+        async with geo_semaphore:
+            entry["country"] = await _get_country(geo_session, entry["proxy"].split(":")[0])
+
+    async with aiohttp.ClientSession() as geo_session:
+        await asyncio.gather(*[_attach_country(w, geo_session) for w in working])
+
     return working
