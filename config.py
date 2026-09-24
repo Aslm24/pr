@@ -2,12 +2,12 @@ import os
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
-# Comma-separated Telegram user IDs, e.g. "123456789,123456789".
+# Comma-separated Telegram user IDs, e.g. "5495732905,123456789".
 # Defaults to the previously-hardcoded ID so behavior doesn't silently
 # change if this isn't set — but set it explicitly in your environment
 # (or as an Actions/systemd secret) going forward rather than relying on
 # the default.
-_owner_ids_raw = os.getenv("OWNER_IDS", "")
+_owner_ids_raw = os.getenv("OWNER_IDS", "5495732905")
 OWNER_IDS: list[int] = [int(uid.strip()) for uid in _owner_ids_raw.split(",") if uid.strip()]
 
 MAX_CHANNELS_PER_USER = 0
@@ -73,11 +73,11 @@ GITHUB_SEARCH_QUERIES = [
 # just at GitHub's lower unauthenticated Search API rate limit.
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 
-GENERATOR_COMMON_PORTS = ["80", "8080", "3128", "8081", "8000", "1080", "4145", "5678", "9999"]
+GENERATOR_COMMON_PORTS = ["8080", "3128", "1080", "4145"]
 
 CHECK_URL = "http://httpbin.org/ip"
-CHECK_TIMEOUT = 3
-MAX_CONCURRENT_CHECKS = 300
+CHECK_TIMEOUT = 2
+MAX_CONCURRENT_CHECKS = 800
 
 GEOIP_API = "http://ip-api.com/json/{ip}?fields=status,countryCode"
 
